@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>单摆运动 · Pendulum Motion</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,500;1,300&family=JetBrains+Mono:wght@300;400;500&family=Noto+Serif+SC:wght@300;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f4f1ea;
+    --ink: #1a1814;
+    --accent: #b8412c;
+    --paper: #ebe5d6;
+    --line: rgba(26, 24, 20, 0.15);
+    --muted: rgba(26, 24, 20, 0.55);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Cormorant Garamond', 'Noto Serif SC', serif;
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  /* 纸张纹理 */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      radial-gradient(circle at 20% 30%, rgba(184, 65, 44, 0.04) 0%, transparent 40%),
+      radial-gradient(circle at 80% 70%, rgba(26, 24, 20, 0.03) 0%, transparent 40%);
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 0.1 0 0 0 0 0.1 0 0 0 0 0.08 0 0 0 0.08 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    opacity: 0.5;
+    pointer-events: none;
+    mix-blend-mode: multiply;
+    z-index: 2;
+  }
+
+  .stage {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    z-index: 3;
+  }
+
+  /* 左侧：单摆 */
+  .canvas-wrap {
+    position: relative;
+    border-right: 1px solid var(--line);
+    overflow: hidden;
+  }
+
+  /* 装饰性网格 */
+  .grid-bg {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 60px 60px;
+    opacity: 0.3;
+    mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+  }
+
+  canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* 标题 */
+  .title {
+    position: absolute;
+    top: 36px;
+    left: 48px;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  .title .eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .title h1 {
+    font-family: 'Cormorant Garamond', serif;
+    font-weight: 300;
+    font-size: 56px;
+    line-height: 0.95;
+    letter-spacing: -0.02em;
+  }
+
+  .title h1 .em {
+    font-style: italic;
+    color: var(--accent);
+  }
+
+  .title .cn {
+    font-family: 'Noto Serif SC', serif;
+    font-weight: 300;
+    font-size: 18px;
+    letter-spacing: 0.4em;
+    margin-top: 14px;
+    color: var(--muted);
+  }
+
+  /* 角标 */
+  .corner-mark {
+    position: absolute;
+    bottom: 32px;
+    left: 48px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.2em;
+    z-index: 10;
+  }
+
+  .corner-mark::before {
+    content: '';
+    display: inline-block;
+    width: 24px;
+    height: 1px;
+    background: var(--muted);
+    vertical-align: middle;
+    margin-right: 12px;
+  }
+
+  /* 实时数值面板 */
+  .readout {
+    position: absolute;
+    bottom: 32px;
+    right: 32px;
+    z-index: 10;
+    text-align: right;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .readout-item {
+    margin-bottom: 14px;
+  }
+
+  .readout-label {
+    font-size: 9px;
+    letter-spacing: 0.25em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 2px;
+  }
+
+  .readout-value {
+    font-size: 22px;
+    font-weight: 300;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .readout-value .unit {
+    font-size: 11px;
+    color: var(--muted);
+    margin-left: 4px;
+  }
+
+  /* 右侧控制面板 */
+  .panel {
+    background: var(--paper);
+    padding: 48px 36px;
+    border-left: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+    position: relative;
+    overflow-y: auto;
+  }
+
+  .panel::before {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    width: 1px;
+    background: linear-gradient(to bottom, transparent, var(--accent) 30%, var(--accent) 70%, transparent);
+    opacity: 0.4;
+  }
+
+  .panel-header {
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 20px;
+  }
+
+  .panel-header .num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--accent);
+    letter-spacing: 0.3em;
+    margin-bottom: 8px;
+  }
+
+  .panel-header h2 {
+    font-family: 'Cormorant Garamond', serif;
+    font-weight: 300;
+    font-style: italic;
+    font-size: 28px;
+  }
+
+  .control {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .control-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .control-label {
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink);
+  }
+
+  .control-value {
+    font-size: 14px;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 自定义滑块 */
+  input[type="range"] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 1px;
+    background: var(--ink);
+    outline: none;
+    opacity: 0.6;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    background: var(--bg);
+    border: 1.5px solid var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: transform 0.2s;
+  }
+
+  input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.3);
+    background: var(--accent);
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: var(--bg);
+    border: 1.5px solid var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  /* 按钮组 */
+  .btn-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .btn {
+    background: transparent;
+    border: 1px solid var(--ink);
+    color: var(--ink);
+    padding: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.3s;
+  }
+
+  .btn:hover {
+    background: var(--ink);
+    color: var(--bg);
+  }
+
+  .btn.primary {
+    background: var(--ink);
+    color: var(--bg);
+  }
+
+  .btn.primary:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  /* 切换开关 */
+  .toggle {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px dashed var(--line);
+    cursor: pointer;
+  }
+
+  .toggle-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+
+  .toggle-state {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    color: var(--muted);
+    transition: color 0.3s;
+  }
+
+  .toggle.active .toggle-state {
+    color: var(--accent);
+  }
+
+  /* 公式 */
+  .formula {
+    margin-top: auto;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic;
+    text-align: center;
+  }
+
+  .formula .eq {
+    font-size: 32px;
+    color: var(--ink);
+    margin-bottom: 6px;
+  }
+
+  .formula .eq sub {
+    font-size: 0.6em;
+  }
+
+  .formula .desc {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.25em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  /* 装饰罗盘 */
+  .compass {
+    position: absolute;
+    top: 36px;
+    right: 36px;
+    width: 60px;
+    height: 60px;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--muted);
+    letter-spacing: 0.2em;
+  }
+
+  .compass::before {
+    content: 'g';
+    font-style: italic;
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 18px;
+    color: var(--accent);
+  }
+
+  .compass::after {
+    content: '↓';
+    position: absolute;
+    bottom: -22px;
+    color: var(--accent);
+    font-size: 14px;
+  }
+
+  @media (max-width: 880px) {
+    .stage { grid-template-columns: 1fr; grid-template-rows: 60vh 40vh; }
+    .panel { border-left: none; border-top: 1px solid var(--line); padding: 24px; }
+    .title h1 { font-size: 36px; }
+    .title { top: 20px; left: 24px; }
+    .corner-mark { left: 24px; bottom: 20px; }
+    .readout { right: 20px; bottom: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="stage">
+
+  <div class="canvas-wrap">
+    <div class="grid-bg"></div>
+    <canvas id="canvas"></canvas>
+
+    <div class="title">
+      <div class="eyebrow">Fig.01 — Simple Harmonic Motion</div>
+      <h1>The <span class="em">Pendulum</span><br>in Motion</h1>
+      <div class="cn">单 摆 之 律 动</div>
+    </div>
+
+    <div class="compass"></div>
+
+    <div class="corner-mark">OBSERVATORY · No.1898</div>
+
+    <div class="readout">
+      <div class="readout-item">
+        <div class="readout-label">Angle θ</div>
+        <div class="readout-value"><span id="angleVal">0.0</span><span class="unit">°</span></div>
+      </div>
+      <div class="readout-item">
+        <div class="readout-label">Velocity</div>
+        <div class="readout-value"><span id="velVal">0.00</span><span class="unit">rad/s</span></div>
+      </div>
+      <div class="readout-item">
+        <div class="readout-label">Period T</div>
+        <div class="readout-value"><span id="periodVal">0.00</span><span class="unit">s</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <div class="num">SECTION · 01</div>
+      <h2>Parameters</h2>
+    </div>
+
+    <div class="control">
+      <div class="control-row">
+        <span class="control-label">Length</span>
+        <span class="control-value"><span id="lengthDisplay">200</span> px</span>
+      </div>
+      <input type="range" id="length" min="80" max="350" value="200">
+    </div>
+
+    <div class="control">
+      <div class="control-row">
+        <span class="control-label">Gravity</span>
+        <span class="control-value"><span id="gravityDisplay">9.8</span> m/s²</span>
+      </div>
+      <input type="range" id="gravity" min="1" max="25" step="0.1" value="9.8">
+    </div>
+
+    <div class="control">
+      <div class="control-row">
+        <span class="control-label">Damping</span>
+        <span class="control-value"><span id="dampingDisplay">0.999</span></span>
+      </div>
+      <input type="range" id="damping" min="0.95" max="1" step="0.001" value="0.999">
+    </div>
+
+    <div class="control">
+      <div class="control-row">
+        <span class="control-label">Initial Angle</span>
+        <span class="control-value"><span id="angleDisplay">45</span>°</span>
+      </div>
+      <input type="range" id="initAngle" min="5" max="89" value="45">
+    </div>
+
+    <div>
+      <div class="toggle" id="trailToggle">
+        <span class="toggle-label">Trail Path</span>
+        <span class="toggle-state">ON</span>
+      </div>
+      <div class="toggle" id="vectorToggle">
+        <span class="toggle-label">Force Vectors</span>
+        <span class="toggle-state">OFF</span>
+      </div>
+    </div>
+
+    <div class="btn-group">
+      <button class="btn primary" id="resetBtn">Reset</button>
+      <button class="btn" id="pauseBtn">Pause</button>
+    </div>
+
+    <div class="formula">
+      <div class="eq">T = 2π√<span style="border-top:1px solid var(--ink);padding:0 4px;">L/g</span></div>
+      <div class="desc">Equation of Motion</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+
+  let W, H, pivotX, pivotY;
+  function resize() {
+    const wrap = canvas.parentElement;
+    W = canvas.width = wrap.clientWidth * devicePixelRatio;
+    H = canvas.height = wrap.clientHeight * devicePixelRatio;
+    canvas.style.width = wrap.clientWidth + 'px';
+    canvas.style.height = wrap.clientHeight + 'px';
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(devicePixelRatio, devicePixelRatio);
+    pivotX = wrap.clientWidth / 2;
+    pivotY = wrap.clientHeight * 0.28;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // 物理参数
+  let length = 200;
+  let gravity = 9.8;
+  let damping = 0.999;
+  let initAngle = 45 * Math.PI / 180;
+  let angle = initAngle;
+  let angVel = 0;
+  let paused = false;
+  let showTrail = true;
+  let showVectors = false;
+  let trail = [];
+  let time = 0;
+
+  // 控件
+  const lengthEl = document.getElementById('length');
+  const gravityEl = document.getElementById('gravity');
+  const dampingEl = document.getElementById('damping');
+  const initAngleEl = document.getElementById('initAngle');
+
+  lengthEl.oninput = e => {
+    length = +e.target.value;
+    document.getElementById('lengthDisplay').textContent = length;
+    trail = [];
+  };
+  gravityEl.oninput = e => {
+    gravity = +e.target.value;
+    document.getElementById('gravityDisplay').textContent = gravity.toFixed(1);
+  };
+  dampingEl.oninput = e => {
+    damping = +e.target.value;
+    document.getElementById('dampingDisplay').textContent = damping.toFixed(3);
+  };
+  initAngleEl.oninput = e => {
+    initAngle = +e.target.value * Math.PI / 180;
+    document.getElementById('angleDisplay').textContent = e.target.value;
+  };
+
+  document.getElementById('resetBtn').onclick = () => {
+    angle = initAngle;
+    angVel = 0;
+    trail = [];
+    time = 0;
+  };
+
+  document.getElementById('pauseBtn').onclick = (e) => {
+    paused = !paused;
+    e.target.textContent = paused ? 'Resume' : 'Pause';
+  };
+
+  document.getElementById('trailToggle').onclick = function() {
+    showTrail = !showTrail;
+    this.classList.toggle('active', showTrail);
+    this.querySelector('.toggle-state').textContent = showTrail ? 'ON' : 'OFF';
+    if (!showTrail) trail = [];
+  };
+  document.getElementById('trailToggle').classList.add('active');
+
+  document.getElementById('vectorToggle').onclick = function() {
+    showVectors = !showVectors;
+    this.classList.toggle('active', showVectors);
+    this.querySelector('.toggle-state').textContent = showVectors ? 'ON' : 'OFF';
+  };
+
+  // 拖拽交互
+  let dragging = false;
+  canvas.addEventListener('mousedown', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const bobX = pivotX + Math.sin(angle) * length;
+    const bobY = pivotY + Math.cos(angle) * length;
+    if (Math.hypot(mx - bobX, my - bobY) < 30) {
+      dragging = true;
+      angVel = 0;
+    }
+  });
+  canvas.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    angle = Math.atan2(mx - pivotX, my - pivotY);
+    trail = [];
+  });
+  window.addEventListener('mouseup', () => dragging = false);
+
+  // 触摸支持
+  canvas.addEventListener('touchstart', e => {
+    const t = e.touches[0];
+    const rect = canvas.getBoundingClientRect();
+    const mx = t.clientX - rect.left;
+    const my = t.clientY - rect.top;
+    const bobX = pivotX + Math.sin(angle) * length;
+    const bobY = pivotY + Math.cos(angle) * length;
+    if (Math.hypot(mx - bobX, my - bobY) < 40) {
+      dragging = true;
+      angVel = 0;
+    }
+  });
+  canvas.addEventListener('touchmove', e => {
+    if (!dragging) return;
+    e.preventDefault();
+    const t = e.touches[0];
+    const rect = canvas.getBoundingClientRect();
+    const mx = t.clientX - rect.left;
+    const my = t.clientY - rect.top;
+    angle = Math.atan2(mx - pivotX, my - pivotY);
+    trail = [];
+  }, { passive: false });
+  window.addEventListener('touchend', () => dragging = false);
+
+  function draw() {
+    const w = canvas.parentElement.clientWidth;
+    const h = canvas.parentElement.clientHeight;
+    ctx.clearRect(0, 0, w, h);
+
+    // 物理更新
+    if (!paused && !dragging) {
+      const lengthMeters = length / 50;
+      const accel = -(gravity / lengthMeters) * Math.sin(angle);
+      angVel += accel * 0.016;
+      angVel *= damping;
+      angle += angVel * 0.016;
+      time += 0.016;
+    }
+
+    const bobX = pivotX + Math.sin(angle) * length;
+    const bobY = pivotY + Math.cos(angle) * length;
+
+    // 轨迹
+    if (showTrail) {
+      trail.push({ x: bobX, y: bobY });
+      if (trail.length > 120) trail.shift();
+      ctx.beginPath();
+      for (let i = 1; i < trail.length; i++) {
+        const alpha = i / trail.length;
+        ctx.strokeStyle = `rgba(184, 65, 44, ${alpha * 0.4})`;
+        ctx.lineWidth = alpha * 1.5;
+        ctx.beginPath();
+        ctx.moveTo(trail[i-1].x, trail[i-1].y);
+        ctx.lineTo(trail[i].x, trail[i].y);
+        ctx.stroke();
+      }
+    }
+
+    // 参考圆弧
+    ctx.strokeStyle = 'rgba(26, 24, 20, 0.12)';
+    ctx.setLineDash([2, 4]);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(pivotX, pivotY, length, Math.PI/2 - 1.5, Math.PI/2 + 1.5);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 垂直参考线
+    ctx.strokeStyle = 'rgba(26, 24, 20, 0.15)';
+    ctx.setLineDash([3, 6]);
+    ctx.beginPath();
+    ctx.moveTo(pivotX, pivotY);
+    ctx.lineTo(pivotX, pivotY + length + 30);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 角度弧
+    ctx.strokeStyle = 'rgba(184, 65, 44, 0.4)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    const startAng = Math.PI / 2;
+    const endAng = Math.PI / 2 - angle;
+    ctx.arc(pivotX, pivotY, 40, Math.min(startAng, endAng), Math.max(startAng, endAng));
+    ctx.stroke();
+
+    // 角度标签
+    ctx.fillStyle = 'rgba(184, 65, 44, 0.8)';
+    ctx.font = 'italic 14px "Cormorant Garamond", serif';
+    ctx.textAlign = 'center';
+    const labelAng = startAng - angle / 2;
+    ctx.fillText('θ', pivotX + Math.cos(labelAng) * 55, pivotY + Math.sin(labelAng) * 55 + 5);
+
+    // 摆线
+    ctx.strokeStyle = '#1a1814';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(pivotX, pivotY);
+    ctx.lineTo(bobX, bobY);
+    ctx.stroke();
+
+    // 力向量
+    if (showVectors) {
+      const sinA = Math.sin(angle);
+      const cosA = Math.cos(angle);
+      const fg = 50;
+      // 重力
+      drawArrow(bobX, bobY, bobX, bobY + fg, 'rgba(26, 24, 20, 0.6)', 'mg');
+      // 切向分力
+      const tx = bobX + cosA * fg * sinA;
+      const ty = bobY - sinA * fg * sinA;
+      drawArrow(bobX, bobY, tx, ty, 'rgba(184, 65, 44, 0.85)', '');
+    }
+
+    // 支点
+    ctx.fillStyle = '#1a1814';
+    ctx.beginPath();
+    ctx.arc(pivotX, pivotY, 4, 0, Math.PI * 2);
+    ctx.fill();
+    // 支点装饰
+    ctx.strokeStyle = '#1a1814';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(pivotX - 30, pivotY);
+    ctx.lineTo(pivotX + 30, pivotY);
+    ctx.stroke();
+    // 斜线
+    for (let i = -3; i <= 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(pivotX + i * 9, pivotY);
+      ctx.lineTo(pivotX + i * 9 - 6, pivotY - 8);
+      ctx.stroke();
+    }
+
+    // 摆球
+    const r = 14;
+    // 阴影
+    ctx.fillStyle = 'rgba(26, 24, 20, 0.15)';
+    ctx.beginPath();
+    ctx.arc(bobX + 2, bobY + 3, r, 0, Math.PI * 2);
+    ctx.fill();
+    // 主体
+    const grad = ctx.createRadialGradient(bobX - 4, bobY - 4, 2, bobX, bobY, r);
+    grad.addColorStop(0, '#d4543a');
+    grad.addColorStop(1, '#8a2f1f');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(bobX, bobY, r, 0, Math.PI * 2);
+    ctx.fill();
+    // 高光
+    ctx.fillStyle = 'rgba(255, 220, 200, 0.6)';
+    ctx.beginPath();
+    ctx.arc(bobX - 4, bobY - 4, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 更新读数
+    document.getElementById('angleVal').textContent = (angle * 180 / Math.PI).toFixed(1);
+    document.getElementById('velVal').textContent = angVel.toFixed(2);
+    const lengthMeters = length / 50;
+    const period = 2 * Math.PI * Math.sqrt(lengthMeters / gravity);
+    document.getElementById('periodVal').textContent = period.toFixed(2);
+
+    requestAnimationFrame(draw);
+  }
+
+  function drawArrow(x1, y1, x2, y2, color, label) {
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    const ang = Math.atan2(y2 - y1, x2 - x1);
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - 8 * Math.cos(ang - 0.4), y2 - 8 * Math.sin(ang - 0.4));
+    ctx.lineTo(x2 - 8 * Math.cos(ang + 0.4), y2 - 8 * Math.sin(ang + 0.4));
+    ctx.closePath();
+    ctx.fill();
+    if (label) {
+      ctx.font = 'italic 12px "Cormorant Garamond", serif';
+      ctx.fillText(label, x2 + 8, y2 + 4);
+    }
+  }
+
+  draw();
+</script>
+
+</body>
+</html>
